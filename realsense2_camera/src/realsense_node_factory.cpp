@@ -352,37 +352,10 @@ void RealSenseNodeFactory::init()
 void RealSenseNodeFactory::startDevice()
 {
     if (_realSenseNode) _realSenseNode.reset();
-    std::string pid_str(_device.get_info(RS2_CAMERA_INFO_PRODUCT_ID));
-    uint16_t pid = std::stoi(pid_str, 0, 16);
     try
     {
-        switch(pid)
-        {
-        case RS400_PID:
-        case RS405_PID:
-        case RS410_PID:
-        case RS460_PID:
-        case RS415_PID:
-        case RS420_PID:
-        case RS420_MM_PID:
-        case RS430_PID:
-        case RS430i_PID:
-        case RS430_MM_PID:
-        case RS430_MM_RGB_PID:
-        case RS435_RGB_PID:
-        case RS435i_RGB_PID:
-        case RS455_PID:
-        case RS457_PID:
-        case RS_USB2_PID:
-            _realSenseNode = std::unique_ptr<BaseRealSenseNode>(new BaseRealSenseNode(*this, _device, _parameters, this->get_node_options().use_intra_process_comms()));
-            break;
-        default:
-            ROS_FATAL_STREAM("Unsupported device!" << " Product ID: 0x" << pid_str);
-            rclcpp::shutdown();
-            exit(1);
-        }
+        _realSenseNode = std::unique_ptr<BaseRealSenseNode>(new BaseRealSenseNode(*this, _device, _parameters, this->get_node_options().use_intra_process_comms()));
         _realSenseNode->publishTopics();
-
     }
     catch(const rs2::backend_error& e)
     {

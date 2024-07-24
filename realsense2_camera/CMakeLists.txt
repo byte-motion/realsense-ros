@@ -15,6 +15,9 @@
 cmake_minimum_required(VERSION 3.5)
 project(realsense2_camera)
 
+# Set BUILD_ACCELERATE_GPU_WITH_GLSL option to ON by default
+option(BUILD_ACCELERATE_GPU_WITH_GLSL "Build with GPU acceleration using GLSL" ON)
+
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 99)
@@ -117,9 +120,9 @@ find_package(tf2 REQUIRED)
 find_package(diagnostic_updater REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core)
 
-find_package(realsense2 2.55.1)
+find_package(realsense2 2.50.13)
 if (BUILD_ACCELERATE_GPU_WITH_GLSL)
-  find_package(realsense2-gl 2.55.1)
+  find_package(realsense2-gl 2.50.13)
 endif()
 if(NOT realsense2_FOUND)
     message(FATAL_ERROR "\n\n Intel RealSense SDK 2.0 is missing, please install it from https://github.com/IntelRealSense/librealsense/releases\n\n")
