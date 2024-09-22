@@ -275,25 +275,61 @@ void RealSenseNodeFactory::init()
 
         // A ROS2 hack: until a better way is found to avoid auto convertion of strings containing only digits to integers:
         if (!_serial_no.empty() && _serial_no.front() == '_') _serial_no = _serial_no.substr(1);    // remove '_' prefix
-
+        
         std::string rosbag_filename(declare_parameter("rosbag_filename", rclcpp::ParameterValue("")).get<rclcpp::PARAMETER_STRING>());
         if (!rosbag_filename.empty())
         {
+            // Start a loop to replay the rosbag indefinitely
+            while (_is_alive)
             {
-                ROS_INFO_STREAM("publish topics from rosbag file: " << rosbag_filename.c_str());
-                rs2::context ctx;
-                _device = ctx.load_device(rosbag_filename.c_str());
-                _serial_no = _device.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
+                try
+                {
+                    ROS_INFO_STREAM("Starting playback of rosbag: " << rosbag_filename.c_str());
+
+                    rs2::context ctx;
+                    _device = ctx.load_device(rosbag_filename.c_str());
+
+                    if (_device)
+                    {
+                        auto playback = _device.as<rs2::playback>();
+                        _serial_no = _device.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
+
+                        // Start the device
+                        startDevice();
+
+                        // Monitor playback status
+                        while (_is_alive && playback.current_status() == RS2_PLAYBACK_STATUS_PLAYING)
+                        {
+                            // Check if playback has reached the end of the rosbag
+                            uint64_t current_position_ns = playback.get_position();
+                            // Restart playback 0.2 seconds before the end of the rosbag
+                            uint64_t total_duration_ns = static_cast<uint64_t>(playback.get_duration().count()) - 200000000; // Subtract 0.2 seconds
+                            if (current_position_ns >= total_duration_ns)
+                            {
+                                ROS_INFO("Reached the last frame, restarting playback...");
+                                playback.seek(std::chrono::seconds(0));  // Restart from the beginning
+                            }
+                            // Add a small sleep to prevent tight looping
+                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        }
+                        playback.stop();
+                        ROS_INFO("Playback finished.");
+                    }
+                }
+                catch (const std::exception &e)
+                {
+                    ROS_ERROR_STREAM("Exception caught during playback loop: " << e.what());
+                    std::this_thread::sleep_for(std::chrono::seconds(1)); // Avoid tight loop if exception occurs
+                }
             }
-            if (_device)
-            {
-                startDevice();
-            }
+
         }
         else
         {
+            // Fallback to normal device initialization if no rosbag is provided
             _initial_reset = declare_parameter("initial_reset", rclcpp::ParameterValue(false)).get<rclcpp::PARAMETER_BOOL>();
 
+            // Device querying logic here (non-rosbag initialization)
             _query_thread = std::thread([=]()
             {
                 std::chrono::milliseconds timespan(static_cast<int>(_reconnect_timeout*1e3));
@@ -317,19 +353,19 @@ void RealSenseNodeFactory::init()
                                 auto time_to_timeout(_wait_for_device_timeout - (this->get_clock()->now() - first_try_time).seconds());
                                 if (time_to_timeout < 0)
                                 {
-                                    ROS_ERROR_STREAM("wait for device timeout of " << _wait_for_device_timeout << " secs expired");
+                                    ROS_ERROR_STREAM("Wait for device timeout of " << _wait_for_device_timeout << " secs expired");
                                     exit(1);
                                 }
                                 else
                                 {
                                     double max_timespan_secs(std::chrono::duration_cast<std::chrono::seconds>(timespan).count());
-                                    actual_timespan = std::chrono::milliseconds (static_cast<int>(std::min(max_timespan_secs, time_to_timeout) * 1e3));
+                                    actual_timespan = std::chrono::milliseconds(static_cast<int>(std::min(max_timespan_secs, time_to_timeout) * 1e3));
                                 }
                             }
                             std::this_thread::sleep_for(actual_timespan);
                         }
                     }
-                    catch(const std::exception& e)
+                    catch (const std::exception & e)
                     {
                         ROS_ERROR_STREAM("Error starting device: " << e.what());
                     }
@@ -337,14 +373,14 @@ void RealSenseNodeFactory::init()
             });
         }
     }
-    catch(const std::exception& ex)
+    catch (const std::exception & ex)
     {
         ROS_ERROR_STREAM("An exception has been thrown: " << __FILE__ << ":" << __LINE__ << ":" << ex.what());
         exit(1);
     }
-    catch(...)
+    catch (...)
     {
-        ROS_ERROR_STREAM("Unknown exception has occured!");
+        ROS_ERROR_STREAM("Unknown exception has occurred!");
         exit(1);
     }
 }
