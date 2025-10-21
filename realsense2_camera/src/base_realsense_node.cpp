@@ -245,6 +245,7 @@ void BaseRealSenseNode::setupFilters()
         _cv_mpc.notify_one();
     };
 
+    _align_depth_filter = std::make_shared<AlignDepthFilter>(std::make_shared<rs2::align>(RS2_STREAM_COLOR), update_align_depth_func, _parameters, _logger);
 #if defined (ACCELERATE_GPU_WITH_GLSL)
     _colorizer_filter = std::make_shared<NamedFilter>(std::make_shared<rs2::gl::colorizer>(), _parameters, _logger); 
     _pc_filter = std::make_shared<PointcloudFilter>(std::make_shared<rs2::gl::pointcloud>(), _node, _parameters, _logger);
@@ -253,11 +254,9 @@ void BaseRealSenseNode::setupFilters()
     _pc_filter = std::make_shared<PointcloudFilter>(std::make_shared<rs2::pointcloud>(), _node, _parameters, _logger);
 #endif
 
-    // Apply PointCloud filter before applying Align-depth as it requires original depth image not aligned-depth image.
-    _filters.push_back(_pc_filter);
-
-    _align_depth_filter = std::make_shared<AlignDepthFilter>(std::make_shared<rs2::align>(RS2_STREAM_COLOR), update_align_depth_func, _parameters, _logger);
+    // Align depth before creating the point cloud so xyz matches the texture frame.
     _filters.push_back(_align_depth_filter);
+    _filters.push_back(_pc_filter);
 
     // Apply Colorizer filter after applying Align-Depth to get colorized aligned depth image.
     _filters.push_back(_colorizer_filter);
@@ -895,6 +894,10 @@ void BaseRealSenseNode::SetBaseStream()
 void BaseRealSenseNode::publishPointCloud(rs2::points pc, const rclcpp::Time& t, const rs2::frameset& frameset)
 {
     std::string frame_id = OPTICAL_FRAME_ID(DEPTH);
+    if (_align_depth_filter && _align_depth_filter->is_enabled())
+    {
+        frame_id = OPTICAL_FRAME_ID(COLOR);
+    }
     _pc_filter->Publish(pc, t, frameset, frame_id);
 }
 
