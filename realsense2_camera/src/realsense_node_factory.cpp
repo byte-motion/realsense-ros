@@ -31,6 +31,96 @@ using namespace realsense2_camera;
 #define REALSENSE_ROS_EMBEDDED_VERSION_STR (VAR_ARG_STRING(VERSION: REALSENSE_ROS_MAJOR_VERSION.REALSENSE_ROS_MINOR_VERSION.REALSENSE_ROS_PATCH_VERSION))
 constexpr auto realsense_ros_camera_version = REALSENSE_ROS_EMBEDDED_VERSION_STR;
 
+namespace
+{
+bool parseHexProductId(const std::string& pid_str, uint16_t& pid)
+{
+    try
+    {
+        size_t parsed_chars = 0;
+        const int parsed_pid = std::stoi(pid_str, &parsed_chars, 16);
+        if (parsed_chars != pid_str.size() || parsed_pid < 0 || parsed_pid > UINT16_MAX)
+            return false;
+        pid = static_cast<uint16_t>(parsed_pid);
+        return true;
+    }
+    catch(const std::exception&)
+    {
+        return false;
+    }
+}
+
+bool inferProductIdFromDeviceName(const std::string& device_name, uint16_t& pid)
+{
+    if (device_name.find("D415") != std::string::npos)
+    {
+        pid = RS415_PID;
+        return true;
+    }
+    if (device_name.find("D405") != std::string::npos)
+    {
+        pid = RS405_PID;
+        return true;
+    }
+    if (device_name.find("D410") != std::string::npos)
+    {
+        pid = RS410_PID;
+        return true;
+    }
+    if (device_name.find("D420") != std::string::npos)
+    {
+        pid = RS420_PID;
+        return true;
+    }
+    if (device_name.find("D421") != std::string::npos)
+    {
+        pid = RS421_PID;
+        return true;
+    }
+    if (device_name.find("D430") != std::string::npos)
+    {
+        pid = RS430_PID;
+        return true;
+    }
+    if (device_name.find("D435i") != std::string::npos)
+    {
+        pid = RS435i_RGB_PID;
+        return true;
+    }
+    if (device_name.find("D435") != std::string::npos)
+    {
+        pid = RS435_RGB_PID;
+        return true;
+    }
+    if (device_name.find("D455") != std::string::npos)
+    {
+        pid = RS455_PID;
+        return true;
+    }
+    if (device_name.find("D457") != std::string::npos)
+    {
+        pid = RS457_PID;
+        return true;
+    }
+    if (device_name.find("D555") != std::string::npos)
+    {
+        pid = RS555_PID;
+        return true;
+    }
+    if (device_name.find("D585S") != std::string::npos)
+    {
+        pid = RS_D585S_PID;
+        return true;
+    }
+    if (device_name.find("D585") != std::string::npos)
+    {
+        pid = RS_D585_PID;
+        return true;
+    }
+    return false;
+}
+}
+
 RealSenseNodeFactory::RealSenseNodeFactory(const rclcpp::NodeOptions & node_options) :
     RosNodeBase("camera", "/camera", node_options),
     _logger(this->get_logger())
@@ -456,9 +546,17 @@ void RealSenseNodeFactory::startDevice()
         // need to be fixed in librealsense
         pid = RS555_PID;
     }
-    else
+    else if (!parseHexProductId(pid_str, pid))
     {
-        pid = std::stoi(pid_str, 0, 16);
+        if (!inferProductIdFromDeviceName(device_name, pid))
+        {
+            ROS_FATAL_STREAM("Unsupported device!" << " Product ID: " << pid_str << ", device name: " << device_name);
+            rclcpp::shutdown();
+            exit(1);
+        }
+
+        ROS_WARN_STREAM("Device reported non-hex Product ID '" << pid_str
+                        << "'. Inferred product family from device name '" << device_name << "'.");
     }
     try
     {
