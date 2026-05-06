@@ -273,8 +273,10 @@ namespace realsense2_camera
         void startDynamicTf();
         void publishDynamicTransforms();
         void publishPointCloud(rs2::points f, const rclcpp::Time& t, const rs2::frameset& frameset);
+#ifdef HAVE_RS2_SAFETY_STREAMS
         void publishOccupancyFrame(rs2::frame f, const rclcpp::Time& t);
         void publishLabeledPointCloud(rs2::labeled_points lpc, const rclcpp::Time& t);
+#endif
         bool shouldPublishCameraInfo(const stream_index_pair& sip);
         Extrinsics rsExtrinsicsToMsg(const rs2_extrinsics& extrinsics) const;
         IMUInfo getImuInfo(const rs2::stream_profile& profile);
@@ -442,4 +444,3 @@ std::string _tf_prefix;
 
     };//end class
 }
-

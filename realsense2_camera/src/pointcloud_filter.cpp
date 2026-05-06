@@ -15,6 +15,8 @@
 #include <pointcloud_filter.h>
 #include <fstream>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <algorithm>
+#include <cmath>
 
 
 using namespace realsense2_camera;
@@ -95,16 +97,13 @@ void PointcloudFilter::Publish(rs2::points pc, const rclcpp::Time& t, const rs2:
         if ((!_pointcloud_publisher) || (!(_pointcloud_publisher->get_subscription_count())))
             return;
     }
-    
     rs2_stream texture_source_id = static_cast<rs2_stream>(_filter->get_option(rs2_option::RS2_OPTION_STREAM_FILTER));
     bool use_texture = texture_source_id != RS2_STREAM_ANY;
     static int warn_count(0);
-    static const int DISPLAY_WARN_NUMBER(15);
     rs2::frameset::iterator texture_frame_itr = frameset.end();
-    
     if (use_texture)
     {
-        std::set<rs2_format> available_formats{ rs2_format::RS2_FORMAT_RGB8, rs2_format::RS2_FORMAT_Y8, rs2_format::RS2_FORMAT_Z16 };
+        std::set<rs2_format> available_formats{ rs2_format::RS2_FORMAT_RGB8, rs2_format::RS2_FORMAT_Y8 };
 
         texture_frame_itr = std::find_if(frameset.begin(), frameset.end(), [&texture_source_id, &available_formats] (rs2::frame f)
                                 {return (rs2_stream(f.get_profile().stream_type()) == texture_source_id) &&
@@ -113,22 +112,9 @@ void PointcloudFilter::Publish(rs2::points pc, const rclcpp::Time& t, const rs2:
         {
             warn_count++;
             std::string texture_source_name = _filter->get_option_value_description(rs2_option::RS2_OPTION_STREAM_FILTER, static_cast<float>(texture_source_id));
-            ROS_WARN_STREAM_COND(warn_count == DISPLAY_WARN_NUMBER, "No stream match for pointcloud chosen texture " << texture_source_name);
             return;
         }
         warn_count = 0;
-    } 
-    else {
-        warn_count++;
-        std::string texture_source_name = _filter->get_option_value_description(
-            rs2_option::RS2_OPTION_STREAM_FILTER,
-            static_cast<float>(texture_source_id)
-        );
-        ROS_WARN_STREAM_COND(
-            warn_count == DISPLAY_WARN_NUMBER,
-            "No matching stream for texture '" << texture_source_name
-            << "'. Set 'pointcloud.stream_profile' to 'depth(1)', 'color(2)', or 'infrared(3)' to enable textured pointclouds."
-        );        
     }
 
     int texture_width(0), texture_height(0);
@@ -160,6 +146,8 @@ void PointcloudFilter::Publish(rs2::points pc, const rclcpp::Time& t, const rs2:
         texture_height = texture_frame.get_height();
         num_colors = texture_frame.get_bytes_per_pixel();
         uint8_t* color_data = (uint8_t*)texture_frame.get_data();
+        rs2_intrinsics color_intrinsics = texture_frame.get_profile().as<rs2::video_stream_profile>().get_intrinsics();
+        const bool reproject_to_color_frame = frame_id.find("_color_optical_frame") != std::string::npos;
         std::string format_str;
         switch(texture_frame.get_profile().format())
         {
@@ -169,13 +157,9 @@ void PointcloudFilter::Publish(rs2::points pc, const rclcpp::Time& t, const rs2:
             case RS2_FORMAT_Y8:
                 format_str = "intensity";
                 break;
-            case RS2_FORMAT_Z16:
-                // Depth can't be used as color texture — skip coloring
-                format_str = "";  // Don't add any color field
-                break;
             default:
                 throw std::runtime_error("Unhandled texture format passed in pointcloud " + std::to_string(texture_frame.get_profile().format()));
-        }        
+        }
         msg_pointcloud->point_step = addPointField(*msg_pointcloud, format_str.c_str(), 1, sensor_msgs::msg::PointField::FLOAT32, msg_pointcloud->point_step);
         msg_pointcloud->row_step = msg_pointcloud->width * msg_pointcloud->point_step;
         msg_pointcloud->data.resize(msg_pointcloud->height * msg_pointcloud->row_step);
@@ -195,16 +179,33 @@ void PointcloudFilter::Publish(rs2::points pc, const rclcpp::Time& t, const rs2:
             bool valid_pixel(vertex->z > 0 && (valid_color_pixel || _allow_no_texture_points));
             if (valid_pixel || _ordered_pc)
             {
-                *iter_x = vertex->x;
-                *iter_y = vertex->y;
-                *iter_z = vertex->z;
+                if (valid_color_pixel)
+                {
+                    color_pixel[0] = i * texture_width - 0.5f;
+                    color_pixel[1] = j * texture_height - 0.5f;
+                }
+                if (valid_color_pixel && reproject_to_color_frame)
+                {
+                    const float z = vertex->z;
+                    const float x = (color_pixel[0] - color_intrinsics.ppx) * z / color_intrinsics.fx;
+                    const float y = (color_pixel[1] - color_intrinsics.ppy) * z / color_intrinsics.fy;
+                    *iter_x = x;
+                    *iter_y = y;
+                    *iter_z = z;
+                }
+                else
+                {
+                    *iter_x = vertex->x;
+                    *iter_y = vertex->y;
+                    *iter_z = vertex->z;
+                }
 
                 if (valid_color_pixel)
                 {
-                    color_pixel[0] = i * texture_width;
-                    color_pixel[1] = j * texture_height;
-                    int pixx = static_cast<int>(color_pixel[0]);
-                    int pixy = static_cast<int>(color_pixel[1]);
+                    int pixx = static_cast<int>(std::lround(color_pixel[0]));
+                    int pixy = static_cast<int>(std::lround(color_pixel[1]));
+                    pixx = std::min(std::max(pixx, 0), texture_width - 1);
+                    pixy = std::min(std::max(pixy, 0), texture_height - 1);
                     int offset = (pixy * texture_width + pixx) * num_colors;
                     reverse_memcpy(&(*iter_color), color_data+offset, num_colors);  // PointCloud2 order of rgb is bgr.
                 }

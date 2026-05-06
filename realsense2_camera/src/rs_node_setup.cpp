@@ -167,9 +167,13 @@ void BaseRealSenseNode::setAvailableSensors()
         const std::string module_name(rs2_to_ros(sensor.get_info(RS2_CAMERA_INFO_NAME)));
         std::unique_ptr<RosSensor> rosSensor;
         if (sensor.is<rs2::depth_sensor>() ||
-            sensor.is<rs2::color_sensor>() ||
+            sensor.is<rs2::color_sensor>()
+#ifdef HAVE_RS2_SAFETY_SENSORS
+            ||
             sensor.is<rs2::safety_sensor>() ||
-            sensor.is<rs2::depth_mapping_sensor>())
+            sensor.is<rs2::depth_mapping_sensor>()
+#endif
+            )
         {
             ROS_DEBUG_STREAM("Set " << module_name << " as VideoSensor.");
             rosSensor = std::make_unique<RosSensor>(sensor, _parameters, frame_callback_function, update_sensor_func, hardware_reset_func, _diagnostics_updater, _logger, _use_intra_process, _dev.is<playback>());
@@ -208,10 +212,12 @@ void BaseRealSenseNode::stopPublishers(const std::vector<stream_profile>& profil
             _info_publishers.erase(sip);
             _depth_aligned_image_publishers.erase(sip);
             _depth_aligned_info_publisher.erase(sip);
+#ifdef HAVE_RS2_SAFETY_STREAMS
             if(profile.stream_type() == RS2_STREAM_LABELED_POINT_CLOUD && _labeled_pointcloud_publisher)
             {
                 _labeled_pointcloud_publisher.reset();
             }
+#endif
         }
         else if (profile.is<rs2::motion_stream_profile>())
         {
@@ -249,6 +255,7 @@ void BaseRealSenseNode::startPublishers(const std::vector<stream_profile>& profi
             else if (profile.stream_type() == RS2_STREAM_DEPTH)
                 _is_depth_enabled = true;
 
+#ifdef HAVE_RS2_SAFETY_STREAMS
             if (profile.stream_type() == RS2_STREAM_OCCUPANCY)
             {
                 // special handling for occupancy stream, since it is a topic of nav_msgs/msg/GridCells messages
@@ -264,6 +271,7 @@ void BaseRealSenseNode::startPublishers(const std::vector<stream_profile>& profi
                     rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(qos),qos));
             }
             else
+#endif
             {
                 std::stringstream image_raw, camera_info;
                 // Depth stream is rectified, Color is unrectified
@@ -659,8 +667,13 @@ void BaseRealSenseNode::CalibConfigReadService(const realsense2_camera_msgs::srv
     try
     {
         (void)req; // silence unused parameter warning
+#ifdef HAVE_RS2_CALIBRATION_CONFIG
         res->calib_config = _dev.as<rs2::auto_calibrated_device>().get_calibration_config();
         res->success = true;
+#else
+        res->success = false;
+        res->error_message = "Calibration config API is not supported by this librealsense version.";
+#endif
     }
     catch (const std::exception &e)
     {
@@ -673,8 +686,14 @@ void BaseRealSenseNode::CalibConfigWriteService(const realsense2_camera_msgs::sr
     realsense2_camera_msgs::srv::CalibConfigWrite::Response::SharedPtr res){
     try
     {
+#ifdef HAVE_RS2_CALIBRATION_CONFIG
         _dev.as<rs2::auto_calibrated_device>().set_calibration_config(req->calib_config);
         res->success = true;
+#else
+        (void)req;
+        res->success = false;
+        res->error_message = "Calibration config API is not supported by this librealsense version.";
+#endif
     }
     catch (const std::exception &e)
     {

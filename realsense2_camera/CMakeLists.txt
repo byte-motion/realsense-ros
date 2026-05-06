@@ -152,13 +152,71 @@ else()
   set(SENSOR_MSGS_TARGET ${sensor_msgs_LIBRARIES})
 endif()
 
-find_package(realsense2 2.56.6)
+find_package(realsense2 2.55.10)
 if (BUILD_ACCELERATE_GPU_WITH_GLSL)
-  find_package(realsense2-gl 2.56.6)
+  find_package(realsense2-gl 2.55.10)
 endif()
 if(NOT realsense2_FOUND)
     message(FATAL_ERROR "\n\n RealSense SDK 2.0 is missing, please install it from https://github.com/realsenseai/librealsense/releases\n\n")
 endif()
+
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("
+  #include <librealsense2/rs.hpp>
+  int main()
+  {
+    rs2_stream safety_stream = RS2_STREAM_SAFETY;
+    rs2_stream occupancy_stream = RS2_STREAM_OCCUPANCY;
+    rs2_stream lpc_stream = RS2_STREAM_LABELED_POINT_CLOUD;
+    rs2::labeled_points labeled_points;
+    (void)safety_stream;
+    (void)occupancy_stream;
+    (void)lpc_stream;
+    (void)labeled_points;
+    return 0;
+  }
+" HAVE_RS2_SAFETY_STREAMS)
+check_cxx_source_compiles("
+  #include <librealsense2/rs.hpp>
+  int main()
+  {
+    rs2::sensor sensor;
+    bool is_safety = sensor.is<rs2::safety_sensor>();
+    bool is_depth_mapping = sensor.is<rs2::depth_mapping_sensor>();
+    return is_safety || is_depth_mapping ? 0 : 0;
+  }
+" HAVE_RS2_SAFETY_SENSORS)
+check_cxx_source_compiles("
+  #include <librealsense2/rs.hpp>
+  #include <memory>
+  #include <vector>
+  int main()
+  {
+    auto filter = std::make_shared<rs2::rotation_filter>(std::vector<rs2_stream>{RS2_STREAM_DEPTH});
+    (void)filter;
+    return 0;
+  }
+" HAVE_RS2_ROTATION_FILTER)
+check_cxx_source_compiles("
+  #include <librealsense2/rs.hpp>
+  int main()
+  {
+    rs2::motion_frame frame;
+    auto data = frame.get_combined_motion_data();
+    (void)data;
+    return 0;
+  }
+" HAVE_RS2_COMBINED_MOTION_DATA)
+check_cxx_source_compiles("
+  #include <librealsense2/rs.hpp>
+  int main()
+  {
+    rs2::auto_calibrated_device device;
+    auto config = device.get_calibration_config();
+    device.set_calibration_config(config);
+    return 0;
+  }
+" HAVE_RS2_CALIBRATION_CONFIG)
 
 #set(CMAKE_NO_SYSTEM_FROM_IMPORTED true)
 include_directories(include)
@@ -270,6 +328,22 @@ add_library(${PROJECT_NAME} SHARED
     ${INCLUDES}
     ${SOURCES}
 )
+
+if(HAVE_RS2_SAFETY_STREAMS)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_RS2_SAFETY_STREAMS)
+endif()
+if(HAVE_RS2_SAFETY_SENSORS)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_RS2_SAFETY_SENSORS)
+endif()
+if(HAVE_RS2_ROTATION_FILTER)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_RS2_ROTATION_FILTER)
+endif()
+if(HAVE_RS2_COMBINED_MOTION_DATA)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_RS2_COMBINED_MOTION_DATA)
+endif()
+if(HAVE_RS2_CALIBRATION_CONFIG)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_RS2_CALIBRATION_CONFIG)
+endif()
 
 if (BUILD_ACCELERATE_GPU_WITH_GLSL)
   set(link_libraries ${realsense2-gl_LIBRARY})

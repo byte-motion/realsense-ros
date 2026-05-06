@@ -175,6 +175,7 @@ void BaseRealSenseNode::calcAndAppendTransformMsgs(const rs2::stream_profile& pr
 
     float3 trans{tf_ex.translation[0], tf_ex.translation[1], tf_ex.translation[2]};
 
+#ifdef HAVE_RS2_SAFETY_STREAMS
     if(profile.stream_type() == RS2_STREAM_LABELED_POINT_CLOUD ||
        profile.stream_type() == RS2_STREAM_OCCUPANCY)
     {
@@ -192,6 +193,7 @@ void BaseRealSenseNode::calcAndAppendTransformMsgs(const rs2::stream_profile& pr
         append_static_tf_msg(transform_ts_, trans, Q, BASE_FRAME_ID, FRAME_ID(sip));
     }
     else
+#endif
     {
         // Rotation order is important (start from left to right):
         // 1. quaternion_optical.inverse() [ROS -> Optical]
@@ -322,4 +324,3 @@ void BaseRealSenseNode::startDynamicTf()
         }
     }
 }
-

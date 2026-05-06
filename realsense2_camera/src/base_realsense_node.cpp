@@ -232,7 +232,9 @@ void BaseRealSenseNode::setupFilters()
     _filters.push_back(std::make_shared<NamedFilter>(std::make_shared<rs2::temporal_filter>(), _parameters, _logger));
     _filters.push_back(std::make_shared<NamedFilter>(std::make_shared<rs2::hole_filling_filter>(), _parameters, _logger));
     _filters.push_back(std::make_shared<NamedFilter>(std::make_shared<rs2::disparity_transform>(false), _parameters, _logger));
+#ifdef HAVE_RS2_ROTATION_FILTER
     _filters.push_back(std::make_shared<NamedFilter>(std::make_shared<rs2::rotation_filter>(std::vector< rs2_stream >{ RS2_STREAM_DEPTH, RS2_STREAM_COLOR, RS2_STREAM_INFRARED }), _parameters, _logger));
+#endif
 
     /* 
     update_align_depth_func is being used in the align depth filter for triggiring the thread that monitors profile
@@ -521,6 +523,7 @@ void BaseRealSenseNode::imu_callback(rs2::frame frame)
 
         if (MOTION == stream_index)
         {
+#ifdef HAVE_RS2_COMBINED_MOTION_DATA
             auto combined_motion_data = frame.as<rs2::motion_frame>().get_combined_motion_data();
 
             imu_msg.linear_acceleration.x = combined_motion_data.linear_acceleration.x;
@@ -535,7 +538,10 @@ void BaseRealSenseNode::imu_callback(rs2::frame frame)
             imu_msg.orientation.y = combined_motion_data.orientation.y;
             imu_msg.orientation.z = combined_motion_data.orientation.z;
             imu_msg.orientation.w = combined_motion_data.orientation.w;
-
+#else
+            ROS_ERROR("Combined motion stream is not supported by this librealsense version.");
+            return;
+#endif
         }
         else
         {
@@ -625,19 +631,25 @@ void BaseRealSenseNode::frame_callback(rs2::frame frame)
             if (f.is<rs2::video_frame>())
                 ROS_DEBUG_STREAM("frame: " << f.as<rs2::video_frame>().get_width() << " x " << f.as<rs2::video_frame>().get_height());
 
+#ifdef HAVE_RS2_SAFETY_STREAMS
             if (f.is<rs2::labeled_points>())
             {
                 publishLabeledPointCloud(f.as<rs2::labeled_points>(), t);
                 publishMetadata(f, t, OPTICAL_FRAME_ID(sip));
             }
             else if (f.is<rs2::points>())
+#else
+            if (f.is<rs2::points>())
+#endif
             {
                 publishPointCloud(f.as<rs2::points>(), t, frameset);
             }
+#ifdef HAVE_RS2_SAFETY_STREAMS
             else if(stream_type == RS2_STREAM_OCCUPANCY)
             {
                 publishOccupancyFrame(f, t);
             }
+#endif
             else
             {
                 if (stream_type == RS2_STREAM_DEPTH)
@@ -685,11 +697,13 @@ void BaseRealSenseNode::frame_callback(rs2::frame frame)
                     rs2_stream_to_string(stream_type), stream_index, frame.get_frame_number(), frame_time, t.nanoseconds());
             
         stream_index_pair sip{stream_type,stream_index};
+#ifdef HAVE_RS2_SAFETY_STREAMS
         if(stream_type == RS2_STREAM_OCCUPANCY)
         {
             publishOccupancyFrame(frame, t);
         }
         else 
+#endif
         {
             if (frame.is<rs2::depth_frame>())
             {
@@ -701,6 +715,7 @@ void BaseRealSenseNode::frame_callback(rs2::frame frame)
             publishFrame(frame, t, sip, _images, _info_publishers, _image_publishers);
         }
     }
+#ifdef HAVE_RS2_SAFETY_STREAMS
     else if (frame.is<rs2::labeled_points>())
     {
         auto stream_type = frame.get_profile().stream_type();
@@ -711,6 +726,7 @@ void BaseRealSenseNode::frame_callback(rs2::frame frame)
         publishLabeledPointCloud(frame.as<rs2::labeled_points>(), t);
         publishMetadata(frame, t, OPTICAL_FRAME_ID(sip));
     }
+#endif
     if (_synced_imu_publisher)
         _synced_imu_publisher->Resume();
 } // frame_callback
@@ -933,9 +949,15 @@ void BaseRealSenseNode::publishPointCloud(rs2::points pc, const rclcpp::Time& t,
 bool BaseRealSenseNode::shouldPublishCameraInfo(const stream_index_pair& sip)
 {
     const rs2_stream stream = sip.first;
+#ifdef HAVE_RS2_SAFETY_STREAMS
     return (stream != RS2_STREAM_SAFETY && stream != RS2_STREAM_OCCUPANCY && stream != RS2_STREAM_LABELED_POINT_CLOUD);
+#else
+    (void)stream;
+    return true;
+#endif
 }
 
+#ifdef HAVE_RS2_SAFETY_STREAMS
 void BaseRealSenseNode::publishOccupancyFrame(rs2::frame f, const rclcpp::Time& t)
 {
     if(!_occupancy_publisher || 0 == _occupancy_publisher->get_subscription_count())
@@ -1027,6 +1049,7 @@ void BaseRealSenseNode::publishLabeledPointCloud(rs2::labeled_points lpc, const 
     // Publish the PointCloud message
     _labeled_pointcloud_publisher->publish(std::move(msg_pointcloud));
 }
+#endif
 
 
 Extrinsics BaseRealSenseNode::rsExtrinsicsToMsg(const rs2_extrinsics& extrinsics) const
@@ -1155,6 +1178,7 @@ void BaseRealSenseNode::publishFrame(
     if (f.is<rs2::video_frame>())
     {
         auto timage = f.as<rs2::video_frame>();
+#ifdef HAVE_RS2_SAFETY_STREAMS
         if(stream.first == RS2_STREAM_OCCUPANCY)
         {
             if (!f.supports_frame_metadata(RS2_FRAME_METADATA_OCCUPANCY_GRID_ROWS) ||
@@ -1165,6 +1189,7 @@ void BaseRealSenseNode::publishFrame(
             height = static_cast<int>(f.get_frame_metadata(RS2_FRAME_METADATA_OCCUPANCY_GRID_ROWS));
         }
         else
+#endif
         {
             width = timage.get_width();
             height = timage.get_height();

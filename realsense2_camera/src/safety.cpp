@@ -17,8 +17,21 @@
 using namespace realsense2_camera;
 using namespace rs2;
 
+#ifndef HAVE_RS2_SAFETY_SENSORS
+namespace
+{
+template <typename ResponseT>
+void setSafetyUnsupported(ResponseT& res)
+{
+    res.success = false;
+    res.error_message = "Safety sensor API is not supported by this librealsense version.";
+}
+}
+#endif
+
 void BaseRealSenseNode::setSafetySensorIfAvailable()
 {
+#ifdef HAVE_RS2_SAFETY_SENSORS
     // Find if the Safety Sensor is available.
     auto iter = std::find_if(_dev_sensors.begin(), _dev_sensors.end(),
                              [](rs2::sensor sensor)
@@ -27,6 +40,7 @@ void BaseRealSenseNode::setSafetySensorIfAvailable()
     {
         _safety_sensor = &(*iter);
     }
+#endif
 }
 
 void BaseRealSenseNode::publishSafetyServices()
@@ -77,6 +91,7 @@ void BaseRealSenseNode::publishSafetyServices()
 void BaseRealSenseNode::SafetyPresetReadService(const realsense2_camera_msgs::srv::SafetyPresetRead::Request::SharedPtr req,
                                                 realsense2_camera_msgs::srv::SafetyPresetRead::Response::SharedPtr res)
 {
+#ifdef HAVE_RS2_SAFETY_SENSORS
     try
     {
         res->safety_preset = _safety_sensor->as<rs2::safety_sensor>().get_safety_preset(req->index);
@@ -87,11 +102,16 @@ void BaseRealSenseNode::SafetyPresetReadService(const realsense2_camera_msgs::sr
         res->success = false;
         res->error_message = std::string("Exception occurred: ") + e.what();
     }
+#else
+    (void)req;
+    setSafetyUnsupported(*res);
+#endif
 }
 
 void BaseRealSenseNode::SafetyPresetWriteService(const realsense2_camera_msgs::srv::SafetyPresetWrite::Request::SharedPtr req,
                                                  realsense2_camera_msgs::srv::SafetyPresetWrite::Response::SharedPtr res)
 {
+#ifdef HAVE_RS2_SAFETY_SENSORS
     try
     {
         _safety_sensor->as<rs2::safety_sensor>().set_safety_preset(req->index, req->safety_preset);
@@ -102,11 +122,16 @@ void BaseRealSenseNode::SafetyPresetWriteService(const realsense2_camera_msgs::s
         res->success = false;
         res->error_message = std::string("Exception occurred: ") + e.what();
     }
+#else
+    (void)req;
+    setSafetyUnsupported(*res);
+#endif
 }
 
 void BaseRealSenseNode::SafetyInterfaceConfigReadService(const realsense2_camera_msgs::srv::SafetyInterfaceConfigRead::Request::SharedPtr req,
                                                          realsense2_camera_msgs::srv::SafetyInterfaceConfigRead::Response::SharedPtr res)
 {
+#ifdef HAVE_RS2_SAFETY_SENSORS
     try
     {
         rs2_calib_location location = static_cast<rs2_calib_location>(req->calib_location);
@@ -118,11 +143,16 @@ void BaseRealSenseNode::SafetyInterfaceConfigReadService(const realsense2_camera
         res->success = false;
         res->error_message = std::string("Exception occurred: ") + e.what();
     }
+#else
+    (void)req;
+    setSafetyUnsupported(*res);
+#endif
 }
 
 void BaseRealSenseNode::SafetyInterfaceConfigWriteService(const realsense2_camera_msgs::srv::SafetyInterfaceConfigWrite::Request::SharedPtr req,
                                                           realsense2_camera_msgs::srv::SafetyInterfaceConfigWrite::Response::SharedPtr res)
 {
+#ifdef HAVE_RS2_SAFETY_SENSORS
     try
     {
         _safety_sensor->as<rs2::safety_sensor>().set_safety_interface_config(req->safety_interface_config);
@@ -133,11 +163,16 @@ void BaseRealSenseNode::SafetyInterfaceConfigWriteService(const realsense2_camer
         res->success = false;
         res->error_message = std::string("Exception occurred: ") + e.what();
     }
+#else
+    (void)req;
+    setSafetyUnsupported(*res);
+#endif
 }
 
 void BaseRealSenseNode::ApplicationConfigReadService(const realsense2_camera_msgs::srv::ApplicationConfigRead::Request::SharedPtr req,
                                                      realsense2_camera_msgs::srv::ApplicationConfigRead::Response::SharedPtr res)
 {
+#ifdef HAVE_RS2_SAFETY_SENSORS
     try
     {
         (void)req; // silence unused parameter warning
@@ -149,11 +184,16 @@ void BaseRealSenseNode::ApplicationConfigReadService(const realsense2_camera_msg
         res->success = false;
         res->error_message = std::string("Exception occurred: ") + e.what();
     }
+#else
+    (void)req;
+    setSafetyUnsupported(*res);
+#endif
 }
 
 void BaseRealSenseNode::ApplicationConfigWriteService(const realsense2_camera_msgs::srv::ApplicationConfigWrite::Request::SharedPtr req,
                                                       realsense2_camera_msgs::srv::ApplicationConfigWrite::Response::SharedPtr res)
 {
+#ifdef HAVE_RS2_SAFETY_SENSORS
     try
     {
         _safety_sensor->as<rs2::safety_sensor>().set_application_config(req->application_config);
@@ -164,6 +204,10 @@ void BaseRealSenseNode::ApplicationConfigWriteService(const realsense2_camera_ms
         res->success = false;
         res->error_message = std::string("Exception occurred: ") + e.what();
     }
+#else
+    (void)req;
+    setSafetyUnsupported(*res);
+#endif
 }
 
 void BaseRealSenseNode::HardwareMonitorCommandSendService(const realsense2_camera_msgs::srv::HardwareMonitorCommandSend::Request::SharedPtr req,
